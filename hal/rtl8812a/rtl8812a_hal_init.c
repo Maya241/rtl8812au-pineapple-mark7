@@ -2187,10 +2187,15 @@ hal_ReadUsbType_8812AU(
 		}
 
 		// Antenna == 1 WMODE = 3 RTL8812AU-VL 11AC + USB2.0 Mode
+		printk(KERN_INFO "RTL8812AU_RF_DIAG efuse: antenna=%u wmode=%u rf_before=%u autoload_fail=%u\n",
+		       (unsigned int)antenna, (unsigned int)wmode,
+		       (unsigned int)pHalData->rf_type, (unsigned int)AutoloadFail);
 		if (antenna == 1) {
 			// Config 8812AU as 1*1 mode AC mode.
 			pHalData->rf_type = RF_1T1R;
 			//UsbModeSwitch_SetUsbModeMechOn(Adapter, FALSE);
+			printk(KERN_INFO "RTL8812AU_RF_DIAG efuse: forced RF_1T1R=%u\n",
+			       (unsigned int)pHalData->rf_type);
 			//pHalData->EFUSEHidden = EFUSE_HIDDEN_812AU_VL;
 			DBG_871X("%s(): EFUSE_HIDDEN_812AU_VL\n",__FUNCTION__);
 		} else if (antenna == 2) {
@@ -3696,6 +3701,11 @@ ReadChipVersion8812A(
 	}
 
 	DBG_8192C("RF_Type is %x!!\n", pHalData->rf_type);
+	printk(KERN_INFO "RTL8812AU_RF_DIAG chip: rf_type=%u paths=%u rf_config=%u special_rf_path=%u\n",
+	       (unsigned int)pHalData->rf_type,
+	       (unsigned int)pHalData->NumTotalRFPath,
+	       (unsigned int)Adapter->registrypriv.rf_config,
+	       (unsigned int)Adapter->registrypriv.special_rf_path);
 }
 
 VOID
