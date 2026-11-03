@@ -4275,12 +4275,19 @@ static inline int	cfg80211_rtw_set_channel(struct wiphy *wiphy
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0))
-/* Experimental monitor-only, 20 MHz channel callback for Linux 5.4. */
+/* Monitor channel selection: HT20, HT40 and contiguous VHT80.
+ * Keep cfg80211 chandef validation and conservative no-DFS policy.
+ * The Realtek offset refers to the location of the PRIMARY 20 MHz
+ * channel relative to its paired 20 MHz channel, NOT to HT40 +/-.
+ */
 static int cfg80211_rtw_set_monitor_channel(
     struct wiphy *wiphy, struct cfg80211_chan_def *chandef)
 {
     _adapter *padapter = wiphy_to_adapter(wiphy);
-    int channel;
+    int primary_freq, center_freq, primary_channel, center_channel;
+    int primary40_freq, delta;
+    u8 offset = HAL_PRIME_CHNL_OFFSET_DONT_CARE;
+    u8 bw = CHANNEL_WIDTH_20;
 
     if (!padapter || !chandef || !chandef->chan)
         return -EINVAL;
@@ -4288,7 +4295,6 @@ static int cfg80211_rtw_set_monitor_channel(
     if (padapter->bDriverStopped || padapter->bSurpriseRemoved)
         return -ENODEV;
 
-    /* Do not reconfigure an interface operating in another mode. */
     if (!padapter->pnetdev ||
         !padapter->pnetdev->ieee80211_ptr ||
         padapter->pnetdev->ieee80211_ptr->iftype != NL80211_IFTYPE_MONITOR)
@@ -4297,25 +4303,74 @@ static int cfg80211_rtw_set_monitor_channel(
     if (!cfg80211_chandef_valid(chandef))
         return -EINVAL;
 
-    /* Conservative initial testing: reject disabled and DFS channels. */
+    /* Reject disabled and DFS-required segments for this first version. */
     if (!cfg80211_chandef_usable(wiphy, chandef,
             IEEE80211_CHAN_DISABLED | IEEE80211_CHAN_RADAR))
         return -EINVAL;
 
-    if (chandef->width != NL80211_CHAN_WIDTH_20 &&
-        chandef->width != NL80211_CHAN_WIDTH_20_NOHT)
-        return -EOPNOTSUPP;
+    primary_freq = chandef->chan->center_freq;
+    center_freq = chandef->center_freq1;
+    primary_channel = ieee80211_frequency_to_channel(primary_freq);
+    center_channel = ieee80211_frequency_to_channel(center_freq);
 
-    channel = ieee80211_frequency_to_channel(chandef->chan->center_freq);
-    if (channel <= 0 || channel > 165)
+    if (primary_channel <= 0 || primary_channel > 165 ||
+        center_channel <= 0 || center_channel > 165)
         return -EINVAL;
 
-    DBG_871X("RTL8812AU monitor channel request: ch=%d, freq=%d MHz\n",
-             channel, chandef->chan->center_freq);
+    switch (chandef->width) {
+    case NL80211_CHAN_WIDTH_20:
+    case NL80211_CHAN_WIDTH_20_NOHT:
+        if (center_freq != primary_freq)
+            return -EINVAL;
+        bw = CHANNEL_WIDTH_20;
+        break;
 
-    /* This helper has void return type; hardware success must be tested. */
-    set_channel_bwmode(padapter, (u8)channel,
-                       HAL_PRIME_CHNL_OFFSET_DONT_CARE, CHANNEL_WIDTH_20);
+    case NL80211_CHAN_WIDTH_40:
+        delta = center_freq - primary_freq;
+        if (delta != 10 && delta != -10)
+            return -EINVAL;
+        offset = delta > 0 ? HAL_PRIME_CHNL_OFFSET_LOWER
+                           : HAL_PRIME_CHNL_OFFSET_UPPER;
+        bw = CHANNEL_WIDTH_40;
+        break;
+
+    case NL80211_CHAN_WIDTH_80:
+        /* The RTL8812AU supports 80 MHz only on the 5 GHz band. */
+        if (chandef->chan->band != NL80211_BAND_5GHZ)
+            return -EOPNOTSUPP;
+
+        delta = center_freq - primary_freq;
+        if (delta != 10 && delta != -10 &&
+            delta != 30 && delta != -30)
+            return -EINVAL;
+
+        /* Identify the 40 MHz half containing the primary 20 MHz. */
+        primary40_freq = center_freq + (delta > 0 ? -20 : 20);
+        delta = primary40_freq - primary_freq;
+        if (delta != 10 && delta != -10)
+            return -EINVAL;
+        offset = delta > 0 ? HAL_PRIME_CHNL_OFFSET_LOWER
+                           : HAL_PRIME_CHNL_OFFSET_UPPER;
+        bw = CHANNEL_WIDTH_80;
+        break;
+
+    default:
+        /* Deliberately exclude 5/10/160 MHz and 80+80 MHz. */
+        return -EOPNOTSUPP;
+    }
+
+    /* This Realtek HAL derives the RF center channel from the primary.
+     * Reject chandefs inconsistent with its internal channel map.
+     */
+    if (rtw_get_center_ch((u8)primary_channel, bw, offset) !=
+        center_channel)
+        return -EINVAL;
+
+    DBG_871X("RTL8812AU monitor: primary=%d center=%d bw=%u offset=%u\n",
+             primary_channel, center_channel, bw, offset);
+
+    /* Void helper: reported state alone does not prove RF success. */
+    set_channel_bwmode(padapter, (u8)primary_channel, offset, bw);
     return 0;
 }
 #endif
