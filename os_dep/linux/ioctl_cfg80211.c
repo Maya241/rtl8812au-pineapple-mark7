@@ -5917,6 +5917,41 @@ static void rtw_cfg80211_init_ht_capab(struct ieee80211_sta_ht_cap *ht_cap, enum
 
 }
 
+/* Experimental VHT advertisement for testing monitor 80 MHz widths.
+ * Conservative MCS0-7 only; no SGI, 160 MHz, or 80+80 capability claims.
+ * RX/TX NSS is derived from the hardware RF configuration.
+ */
+#ifdef CONFIG_80211AC_VHT
+static void rtw_cfg80211_init_vht_capab(struct ieee80211_sta_vht_cap *cap,
+                                        u8 rf_type)
+{
+    u16 rx_map = 0xffff;
+    u16 tx_map = 0xffff;
+    u16 mcs = IEEE80211_VHT_MCS_SUPPORT_0_7;
+
+    if (rf_type != RF_1T1R && rf_type != RF_1T2R &&
+        rf_type != RF_2T2R)
+        return;
+
+    /* One receive and one transmit spatial stream, at minimum. */
+    rx_map = (rx_map & ~0x0003) | mcs;
+    tx_map = (tx_map & ~0x0003) | mcs;
+
+    /* A 1T2R configuration can receive, but not send, two streams. */
+    if (rf_type == RF_1T2R || rf_type == RF_2T2R)
+        rx_map = (rx_map & ~0x000c) | (mcs << 2);
+    if (rf_type == RF_2T2R)
+        tx_map = (tx_map & ~0x000c) | (mcs << 2);
+
+    cap->vht_supported = true;
+    cap->cap = 0; /* Basic 80 MHz VHT; no unverified optional flags. */
+    cap->vht_mcs.rx_mcs_map = cpu_to_le16(rx_map);
+    cap->vht_mcs.tx_mcs_map = cpu_to_le16(tx_map);
+    cap->vht_mcs.rx_highest = cpu_to_le16(0); /* Unspecified */
+    cap->vht_mcs.tx_highest = cpu_to_le16(0); /* Unspecified */
+}
+#endif
+
 void rtw_cfg80211_init_wiphy(_adapter *padapter)
 {
 	u8 rf_type;
@@ -5936,8 +5971,12 @@ void rtw_cfg80211_init_wiphy(_adapter *padapter)
 
 	if (padapter->registrypriv.wireless_mode & WIRELESS_11A) {
 		bands = wiphy->bands[IEEE80211_BAND_5GHZ];
-		if(bands)
+		if (bands) {
 			rtw_cfg80211_init_ht_capab(&bands->ht_cap, IEEE80211_BAND_5GHZ, rf_type);
+#ifdef CONFIG_80211AC_VHT
+			rtw_cfg80211_init_vht_capab(&bands->vht_cap, rf_type);
+#endif
+		}
 	}
 
 	/* init regulary domain */
