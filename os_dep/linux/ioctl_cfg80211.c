@@ -4274,6 +4274,52 @@ static inline int	cfg80211_rtw_set_channel(struct wiphy *wiphy
 	return 0;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0))
+/* Experimental monitor-only, 20 MHz channel callback for Linux 5.4. */
+static int cfg80211_rtw_set_monitor_channel(
+    struct wiphy *wiphy, struct cfg80211_chan_def *chandef)
+{
+    _adapter *padapter = wiphy_to_adapter(wiphy);
+    int channel;
+
+    if (!padapter || !chandef || !chandef->chan)
+        return -EINVAL;
+
+    if (padapter->bDriverStopped || padapter->bSurpriseRemoved)
+        return -ENODEV;
+
+    /* Do not reconfigure an interface operating in another mode. */
+    if (!padapter->pnetdev ||
+        !padapter->pnetdev->ieee80211_ptr ||
+        padapter->pnetdev->ieee80211_ptr->iftype != NL80211_IFTYPE_MONITOR)
+        return -EBUSY;
+
+    if (!cfg80211_chandef_valid(chandef))
+        return -EINVAL;
+
+    /* Conservative initial testing: reject disabled and DFS channels. */
+    if (!cfg80211_chandef_usable(wiphy, chandef,
+            IEEE80211_CHAN_DISABLED | IEEE80211_CHAN_RADAR))
+        return -EINVAL;
+
+    if (chandef->width != NL80211_CHAN_WIDTH_20 &&
+        chandef->width != NL80211_CHAN_WIDTH_20_NOHT)
+        return -EOPNOTSUPP;
+
+    channel = ieee80211_frequency_to_channel(chandef->chan->center_freq);
+    if (channel <= 0 || channel > 165)
+        return -EINVAL;
+
+    DBG_871X("RTL8812AU monitor channel request: ch=%d, freq=%d MHz\n",
+             channel, chandef->chan->center_freq);
+
+    /* This helper has void return type; hardware success must be tested. */
+    set_channel_bwmode(padapter, (u8)channel,
+                       HAL_PRIME_CHNL_OFFSET_DONT_CARE, CHANNEL_WIDTH_20);
+    return 0;
+}
+#endif
+
 static inline int	cfg80211_rtw_auth(struct wiphy *wiphy, struct net_device *ndev,
                               struct cfg80211_auth_request *req)
 {
@@ -5969,6 +6015,10 @@ static void rtw_cfg80211_preinit_wiphy(_adapter *padapter, struct wiphy *wiphy)
 }
 
 static struct cfg80211_ops rtw_cfg80211_ops = {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0))
+    .set_monitor_channel = cfg80211_rtw_set_monitor_channel,
+#endif
+
 	.change_virtual_intf = cfg80211_rtw_change_iface,
 	.add_key = cfg80211_rtw_add_key,
 	.get_key = cfg80211_rtw_get_key,
