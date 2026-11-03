@@ -5960,8 +5960,6 @@ void rtw_cfg80211_init_wiphy(_adapter *padapter)
 	struct wiphy *wiphy = pwdev->wiphy;
 
 	rtw_hal_get_hwreg(padapter, HW_VAR_RF_TYPE, (u8 *)(&rf_type));
-	printk(KERN_INFO "RTL8812AU_RF_DIAG cfg80211: rf_type=%u wireless_mode=0x%x\n",
-	       (unsigned int)rf_type, (unsigned int)padapter->registrypriv.wireless_mode);
 
 	DBG_8192C("%s:rf_type=%d\n", __func__, rf_type);
 
