@@ -22,6 +22,11 @@
 #include <drv_types.h>
 #include <platform_ops.h>
 
+/* Module parameters needed before RF chip detection. */
+extern int rtw_rf_config;
+extern int rtw_special_rf_path;
+
+
 #ifndef CONFIG_USB_HCI
 #error "CONFIG_USB_HCI shall be on!\n"
 #endif
@@ -1333,6 +1338,9 @@ _adapter *rtw_usb_if1_init(struct dvobj_priv *dvobj,
 	//step init_io_priv
 	rtw_init_io_priv(padapter,usb_set_intf_ops);
 
+	/* RF parameters must be available before chip detection. */
+	padapter->registrypriv.rf_config = (u8)rtw_rf_config;
+	padapter->registrypriv.special_rf_path = (u8)rtw_special_rf_path;
 	//step read_chip_version
 	rtw_hal_read_chip_version(padapter);
 
